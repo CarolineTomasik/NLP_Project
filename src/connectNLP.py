@@ -7,6 +7,8 @@ Created on Mon May 25 16:24:07 2020
 """
 
 import sqlite3
+import spacy
+nlp_en = spacy.blank("en")
 
 try:
     conn = sqlite3.connect('../data/articles.db')
@@ -15,12 +17,15 @@ try:
 except Exception as e:
     print("Error during connection: ",str(e))
 
-#conn.close()
-
 cur = conn.cursor()
 cur.execute("SELECT * FROM articles")
-rows = cur.fetchmany(5)
+#rows = cur.fetchmany(5)
+rows = cur.fetchall()
 
 for row in rows:
-    print(row)
+    text = row[4]
+    print([str(token) for token in nlp_en(text.lower())])
 
+
+
+#conn.close()
