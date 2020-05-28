@@ -1,0 +1,36 @@
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import SpaceTokenizer
+nltk.download('stopwords')
+import re
+import string  
+import requests
+
+#get articles from CNN
+
+def article_cnn():
+    body = []
+    for index in range(0, 1000, 100):
+        url = 'https://search.api.cnn.io/content?q=covid-19&size=100&from=' + \
+            str(index)
+        response = requests.get(url)
+        content = response.json()
+        results = content["result"]
+        for result in results:
+            body.append(result['body'])
+    return body 
+
+articles = article_cnn()   
+
+#clean the texts
+
+for text in articles:
+    p = string.punctuation+'—'
+    text_rem = re.sub('[%s]' % re.escape(p), '', text)
+    textclean =  text_rem.split()
+    text_join = " ".join(textclean)
+    #print(text_join)
+    word_list = SpaceTokenizer().tokenize(text_join.lower())
+    filtered_words = [word for word in word_list if word not in stopwords.words('english')]
+    print(filtered_words)
+    
