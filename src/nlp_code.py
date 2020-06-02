@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Thu May 28 15:18:24 2020
 
@@ -27,27 +25,29 @@ import string
 from nltk.corpus import stopwords
 from nltk.stem.porter import PorterStemmer
 nltk.download('wordnet')
+
 from stanfordcorenlp import StanfordCoreNLP
 from Stanford_lemmatizer import lemmatize_corenlp
 from itertools import chain
+import pickle
 
 # select articles text by site
-def get_site_articles(site):
-    cur = conn.cursor()
-    sql = "SELECT * FROM articles WHERE site = '{}' AND length(article) > 0;".format(site)
-    cur.execute(sql)
-    articles_list = []
-    #rows = cur.fetchmany(31)
-    rows = cur.fetchall()
-    for row in rows:
-        if len(row[4]) > 0:
-            articles_list.append(row[4])
-    return articles_list
+def get_site_articles(conn, site):
+	cur = conn.cursor()
+	sql = "SELECT * FROM articles WHERE site = '{}' AND length(article) > 0;".format(site)
+	cur.execute(sql)
+	articles_list = []
+	#rows = cur.fetchmany(31)
+	rows = cur.fetchall()
+	for row in rows:
+		if len(row[4]) > 0:
+			articles_list.append(row[4])
+	return articles_list
 
 
 def configure_stopwords():
 	stop_words = set(stopwords.words('english'))
-	extra_stopwords = ['this', 'also', 'fox', 'cnn', 'click', 'caption']
+	extra_stopwords = ['this', 'also', 'fox', 'cnn', 'click', 'caption', 'photo']
 	for extra in extra_stopwords:
 		stop_words.add(extra)
 	return stop_words
@@ -55,21 +55,22 @@ def configure_stopwords():
  
 def cleaner(stop_words, text):
 	#clean text: tokenize, remove newlines, remove punctuation, remove stop words
-    lowered = str(text).lower().replace('\\n\\n', ' ').replace("\\\'","")
-    tokens = [str(token) for token in nlp_en(lowered)]
-    words = [word for word in tokens if word.isalpha()]
-    words = [w for w in words if not w in stop_words]
-    return words
+	lowered = str(text).lower().replace('\\n\\n', ' ').replace("\\\'","")
+	tokens = [str(token) for token in nlp_en(lowered)]
+	words = [word for word in tokens if word.isalpha()]
+	words = [w for w in words if not w in stop_words]
+	return words
 
 
-def preprocess_text(site):
-		articles_list = get_site_articles(site) 
+def preprocess_text(conn, site, stop_words, nlp):
+		articles_list = get_site_articles(conn, site) 
 		clean_list = []
 		for article in articles_list:
 			clean = cleaner(stop_words, article)
 			clean = lemmatize_corenlp(conn_nlp=nlp, sentence=' '.join(clean))
 			clean_list.append(clean)
 		return clean_list
+
 
 
 def main():
@@ -80,14 +81,23 @@ def main():
 	except Exception as e:
 		print("Error during connection:",str(e))
 
+
 	# connect to Standford lemmatizer
 	nlp = StanfordCoreNLP('http://localhost', port=9000, timeout=30000)
 
 	stop_words = configure_stopwords()
 
-	fox_clean = preprocess_text('www.foxnews.com')
-	cnn_clean = preprocess_text('www.cnn.com')
-
+	fox_clean = preprocess_text(conn, 'www.foxnews.com', stop_words, nlp)
+	cnn_clean = preprocess_text(conn, 'www.cnn.com', stop_words, nlp)
+	
+	dbfile = open(r'../data/fox_clean.pickle', 'wb')
+	pickle.dump(fox_clean, dbfile)
+	dbfile.close()
+	
+	dbfile = open(r'../data/cnn_clean.pickle', 'wb')
+	pickle.dump(cnn_clean, dbfile)
+	dbfile.close()
+	
 	print("Found {0} FOXnews and {1} CNN articles".format(len(fox_clean), len(cnn_clean)))
 
 	print(Counter(list(chain(*fox_clean))).most_common(10))
@@ -95,7 +105,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+	main()
 
 
 
@@ -103,33 +113,30 @@ if __name__ == '__main__':
 freq = nltk.FreqDist(clean_fox)
 #print(freq)
 for key,val in freq.items():
-    print(str(key) + ':' + str(val))    
-freq.plot(20, cumulative=False)    
+	print(str(key) + ':' + str(val))	
+freq.plot(20, cumulative=False)	
 
 freq = nltk.FreqDist(clean_cnn)
 #print(freq)
 for key,val in freq.items():
-    print(str(key) + ':' + str(val))    
+	print(str(key) + ':' + str(val))	
 freq.plot(20, cumulative=False) 
 
 
 
-
-
-
 def cleaning_text(text):
-    lowered = str(text).lower().replace('\\n\\n', ' ').replace("\\\'","")
-    #lemmatized = lemmatize_corenlp(conn_nlp=nlp, sentence=' '.join(lowered))
-    tokens = [str(token) for token in nlp_en(lowered)]
-    words = [word for word in tokens if word.isalpha()]
-    words = [w for w in words if not w in stop_words]
-    return words
+	lowered = str(text).lower().replace('\\n\\n', ' ').replace("\\\'","")
+	#lemmatized = lemmatize_corenlp(conn_nlp=nlp, sentence=' '.join(lowered))
+	tokens = [str(token) for token in nlp_en(lowered)]
+	words = [word for word in tokens if word.isalpha()]
+	words = [w for w in words if not w in stop_words]
+	return words
 
 
-fox_text = ' '.join(lemmatizer(fox_text))    
+fox_text = ' '.join(lemmatizer(fox_text))	
 fox_clean = cleaning_text((lemmatize_corenlp(conn_nlp=nlp, sentence=fox_text)))
 
-cnn_text =  ' '.join(lemmatizer(cnn_text))    
+cnn_text =  ' '.join(lemmatizer(cnn_text))	
 cnn_clean = cleaning_text((lemmatize_corenlp(conn_nlp=nlp, sentence=cnn_text)))
 print(cnn_clean)
 
@@ -148,8 +155,8 @@ lemma1 = lemmatize_corenlp(conn_nlp=nlp, sentence=' '.join(lemma_test))
 
 #POS tagging
 def preprocess(text):
-    text = nltk.pos_tag(text)
-    return text
+	text = nltk.pos_tag(text)
+	return text
 
 fox_text_POS = preprocess(clean_fox)
 print(fox_text_POS)
@@ -184,22 +191,22 @@ import requests
 import re
 
 # def most_common(text):
-#     article = nlp(str(text))
-#     len(article.ents)
-#     labels = [x.label_ for x in article.ents]
-#     Counter(labels)
-#     items = [x.text for x in article.ents]
-#     return Counter(items).most_common(5)
+#	 article = nlp(str(text))
+#	 len(article.ents)
+#	 labels = [x.label_ for x in article.ents]
+#	 Counter(labels)
+#	 items = [x.text for x in article.ents]
+#	 return Counter(items).most_common(5)
 
 # most_common(clean_fox)
 # most_common(clean_cnn)
 
 
 def highlighted_sents(text):
-    article = nlp(str(text))
-    sentences = [x for x in article.sents]
-    print(sentences[20])
-    #displacy.render(nlp(str(sentences[20])), jupyter=True, style='ent')
+	article = nlp(str(text))
+	sentences = [x for x in article.sents]
+	print(sentences[20])
+	#displacy.render(nlp(str(sentences[20])), jupyter=True, style='ent')
 
 highlighted_sents(clean_fox)
 highlighted_sents(clean_cnn)
@@ -278,14 +285,14 @@ print(vectorizer.get_feature_names())
 
 DF = {}
 for i in range(len(clean_fox)):
-    tokens = processed_text[i]
-    for w in tokens:
-        try:
-            DF[w].add(i)
-        except:
-            DF[w] = {i}
-            
-sklearn.feature_extraction.text.TfidfVectorizer(fox_text)            
+	tokens = processed_text[i]
+	for w in tokens:
+		try:
+			DF[w].add(i)
+		except:
+			DF[w] = {i}
+			
+sklearn.feature_extraction.text.TfidfVectorizer(fox_text)			
 
 vectorizer = TfidfVectorizer()
 X = vectorizer.fit_transform(fox_text)
@@ -299,7 +306,7 @@ print(X.shape)
 # analyze = vectorizer.build_analyzer() 
 # print(‘Fox’,analyze(fox_text))
 # print(‘CNN’,analyze(cnn_text))
-# print(‘Document transform’,X.toarray())      
+# print(‘Document transform’,X.toarray())	  
 
 # X = vectorizer.fit_transform(fox_text)
 # print(vectorizer.get_feature_names()) 
@@ -315,54 +322,54 @@ uniqueWords = set(bagOfWordsA).union(set(bagOfWordsB))
 
 numOfWordsA = dict.fromkeys(uniqueWords, 0)
 for word in bagOfWordsA:
-    numOfWordsA[word] += 1
+	numOfWordsA[word] += 1
 numOfWordsB = dict.fromkeys(uniqueWords, 0)
 for word in bagOfWordsB:
-    numOfWordsB[word] += 1
-    
-    
+	numOfWordsB[word] += 1
+	
+	
 def computeTF(wordDict, bagOfWords):
-    tfDict = {}
-    bagOfWordsCount = len(bagOfWords)
-    for word, count in wordDict.items():
-        tfDict[word] = count / float(bagOfWordsCount)
-    return tfDict    
-    
+	tfDict = {}
+	bagOfWordsCount = len(bagOfWords)
+	for word, count in wordDict.items():
+		tfDict[word] = count / float(bagOfWordsCount)
+	return tfDict	
+	
 tfA = computeTF(numOfWordsA, bagOfWordsA)
 #print(tfA)
-tfB = computeTF(numOfWordsB, bagOfWordsB)    
+tfB = computeTF(numOfWordsB, bagOfWordsB)	
 #print(tfB)   
 
 def computeIDF(documents):
-    import math
-    N = len(documents)
-    
-    idfDict = dict.fromkeys(documents[0].keys(), 0)
-    for document in documents:
-        for word, val in document.items():
-            if val > 0:
-                idfDict[word] += 1
-    
-    for word, val in idfDict.items():
-        idfDict[word] = math.log(N / float(val))
-    return idfDict    
+	import math
+	N = len(documents)
+	
+	idfDict = dict.fromkeys(documents[0].keys(), 0)
+	for document in documents:
+		for word, val in document.items():
+			if val > 0:
+				idfDict[word] += 1
+	
+	for word, val in idfDict.items():
+		idfDict[word] = math.log(N / float(val))
+	return idfDict	
    
  
-idfs = computeIDF([numOfWordsA, numOfWordsB])    
-    
+idfs = computeIDF([numOfWordsA, numOfWordsB])	
+	
 def computeTFIDF(tfBagOfWords, idfs):
-    tfidf = {}
-    for word, val in tfBagOfWords.items():
-        tfidf[word] = val * idfs[word]
-    return tfidf    
-    
+	tfidf = {}
+	for word, val in tfBagOfWords.items():
+		tfidf[word] = val * idfs[word]
+	return tfidf	
+	
 tfidfA = computeTFIDF(tfA, idfs)
 tfidfB = computeTFIDF(tfB, idfs)
-df = pd.DataFrame([tfidfA, tfidfB])    
+df = pd.DataFrame([tfidfA, tfidfB])	
 
-print(df)    
-    
-    
+print(df)	
+	
+	
 print(str(clean_fox))
 
 
@@ -374,13 +381,13 @@ from nltk.corpus import stopwords
 sr= stopwords.words('english')
 clean_tokens = tokens[:]
 for token in tokens:
-    if token in stopwords.words('english'):
-        
-        clean_tokens.remove(token)
-        
+	if token in stopwords.words('english'):
+		
+		clean_tokens.remove(token)
+		
 freq = nltk.FreqDist(clean_tokens)
 for key,val in freq.items():
-    print(str(key) + ':' + str(val))
+	print(str(key) + ':' + str(val))
 freq.plot(20, cumulative=False)
 
 
@@ -395,16 +402,16 @@ print(clean_fox)
 list1 = ['material', 'may', 'published']
 
 def wordListToFreqDict(wordlist):
-    wordfreq = [wordlist.count(p) for p in wordlist]
-    return dict(list(zip(wordlist,wordfreq)))
+	wordfreq = [wordlist.count(p) for p in wordlist]
+	return dict(list(zip(wordlist,wordfreq)))
 
 wordListToFreqDict(list1)
-    
+	
 def sortFreqDict(freqdict):
-    aux = [(freqdict[key], key) for key in freqdict]
-    aux.sort()
-    aux.reverse()
-    return aux
+	aux = [(freqdict[key], key) for key in freqdict]
+	aux.sort()
+	aux.reverse()
+	return aux
 
 sortFreqDict(clean_fox)
 
