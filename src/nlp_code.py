@@ -43,6 +43,7 @@ from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 import seaborn as sns
 import matplotlib.pyplot as plt
+import sklearn.metrics as metrics
 
 
 def get_site_articles(conn, site):
@@ -61,7 +62,7 @@ def get_site_articles(conn, site):
 def configure_stopwords():
 	#add extra stopwords that are irrelevant for our purposes
 	stop_words = set(stopwords.words('english'))
-	extra_stopwords = ['this', 'also', 'fox', 'cnn', 'click', 'caption', 'photo', 'hide', 'latest', 'inbox', 'app','']
+	extra_stopwords = ['this', 'also', 'fox', 'cnn', 'click', 'caption', 'photo', 'hide', 'latest', 'inbox', 'app','news', 'download', 'subscribe']
 	for extra in extra_stopwords:
 		stop_words.add(extra)
 	return stop_words
@@ -69,6 +70,16 @@ def configure_stopwords():
 
 def cleaner(stop_words, text):
 	#clean text: tokenize, remove newlines, remove punctuation, remove stop words 
+	identifying_sentences = [
+		'Get all the latest news on coronavirus and more delivered daily to your inbox. Sign up here.',
+		'Read More',
+		'CLICK HERE FOR COMPLETE CORONAVIRUS COVERAGE',
+		'This material may not be published, broadcast, rewritten, or redistributed.',
+		'©2020 FOX News Network, LLC. All rights reserved.',
+		'All market data delayed 20 minutes.'
+		]
+	for x in identifying_sentences:
+		text = text.replace(x, '')
 	lowered = str(text).lower().replace('\\n\\n', ' ').replace("\\\'","")
 	tokens = [str(token) for token in nlp_en(lowered)]
 	words = [word for word in tokens if word.isalpha()]
@@ -82,8 +93,9 @@ def preprocess_text(conn, site, stop_words, nlp):
 	clean_list = []
 	for article in articles_list:
 		clean = cleaner(stop_words, article)
-		clean = lemmatize_corenlp(conn_nlp=nlp, sentence=' '.join(clean))
-		clean_list.append(clean)
+		if len(clean) > 20:
+			clean = lemmatize_corenlp(conn_nlp=nlp, sentence=' '.join(clean))
+			clean_list.append(clean)
 	return clean_list
 
 
@@ -117,7 +129,27 @@ def tfidf(text):
 		   print([[dictionary[id], np.around(freq, decimals=2)] for id, freq in text])
 	return tfidf
 
-
+def model_plot(mod, X, Y):
+    fpr, tpr, threshold = metrics.roc_curve(Y, mod.predict(X))
+    roc_auc = metrics.auc(fpr, tpr)
+    plt.title('Receiver Operating Characteristic')
+    plt.plot(fpr, tpr, 'b', label = 'AUC = %0.2f' % roc_auc)
+    plt.legend(loc = 'lower right')
+    plt.plot([0, 1], [0, 1],'r--')
+    plt.xlim([0, 1])
+    plt.ylim([0, 1])
+    plt.ylabel('True Positive Rate')
+    plt.xlabel('False Positive Rate')
+    plt.show()
+	
+	
+def model_evaluation(mod, X_train, Y_train, X_test, Y_test):
+    print(metrics.confusion_matrix(Y_train, mod.predict(X_train)))
+    model_plot(mod, X_train, Y_train)
+    print(metrics.confusion_matrix(Y_test, mod.predict(X_test)))
+    model_plot(mod, X_test, Y_test)
+	
+	
 def main():
 	#connect to sqlite database
 	try:
@@ -132,12 +164,13 @@ def main():
 	stop_words = configure_stopwords()
 
 	clean_fox = preprocess_text(conn, 'www.foxnews.com', stop_words, nlp)
+	print(clean_fox)
 	clean_cnn = preprocess_text(conn, 'www.cnn.com', stop_words, nlp)
 	
 	#create list of all articles and all sites for classification
 	all_articles =  clean_fox + clean_cnn
 	#print(all_articles)
-	all_sites = list([0] * 149 + [1] * 115)
+	all_sites = list([0] * len(clean_fox) + [1] * len(clean_cnn))
 	#print(all_sites)
 	X, y = [' '.join(x) for x in all_articles], all_sites
 	print(X)
@@ -146,21 +179,25 @@ def main():
 	#y = vectorizer.fit_transform(all_sites)#.toarray()
 	tfidfconverter = TfidfTransformer()
 	X = tfidfconverter.fit_transform(X).toarray()
-	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
+	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=100)
 	
 	#random forest classifier
-	classifier = RandomForestClassifier(n_estimators=1000, random_state=0)
-	classifier.fit(X_train, y_train) 
+	classifier = RandomForestClassifier(n_estimators=1000, random_state=100)
+	mod = classifier.fit(X_train, y_train) 
 	y_pred = classifier.predict(X_test)
 	
 	#confusion matrix
-	print(confusion_matrix(y_test,y_pred))
+	#print(confusion_matrix(y_test,y_pred))
 	cm = confusion_matrix(y_test,y_pred)
 	ax= plt.subplot()
 	sns.heatmap(cm, annot=True, ax = ax, cmap='Greens'); 
 	ax.set_xlabel('Predicted labels');ax.set_ylabel('True labels'); 
 	ax.set_title('Confusion Matrix'); 
 	ax.xaxis.set_ticklabels(['Fox News', 'CNN']); ax.yaxis.set_ticklabels(['Fox News', 'CNN']);
+	ax.show()
+	
+	#auc curve
+	model_evaluation(mod, X_train, y_train, X_test, y_test)
 	
 	print(classification_report(y_test,y_pred))
 	print(accuracy_score(y_test, y_pred))
